@@ -115,9 +115,8 @@ jobs:
             ${{ github.event_name == 'pull_request' && 'static-builder-musl.args.NO_COMPRESS=1' || '' }}
             *.tags=
             *.platform=${{ matrix.platform }}
-            *.cache-from=type=gha,scope=${{ needs.prepare.outputs.ref || github.ref }}-static-builder-musl
-            *.cache-from=type=gha,scope=refs/heads/main-static-builder-musl
-            *.cache-to=type=gha,scope=${{ needs.prepare.outputs.ref || github.ref }}-static-builder-musl,ignore-error=true
+            *.cache-from=type=local,src=/tmp/.buildx-cache
+            *.cache-to=type=local,dest=/tmp/.buildx-cache,mode=max
             ${{ fromJson(needs.prepare.outputs.push) && format('*.output=type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE_NAME) || '' }}
         env:
           SHA: ${{ github.sha }}
@@ -218,9 +217,8 @@ jobs:
             static-builder-gnu.args.BUILD_PACKAGES=1
             *.tags=
             *.platform=${{ matrix.platform }}
-            *.cache-from=type=gha,scope=${{ needs.prepare.outputs.ref || github.ref }}-static-builder-gnu
-            *.cache-from=type=gha,scope=refs/heads/main-static-builder-gnu
-            *.cache-to=type=gha,scope=${{ needs.prepare.outputs.ref || github.ref }}-static-builder-gnu,ignore-error=true
+            *.cache-from=type=local,src=/tmp/.buildx-cache-gnu
+            *.cache-to=type=local,dest=/tmp/.buildx-cache-gnu,mode=max
             ${{ fromJson(needs.prepare.outputs.push) && format('*.output=type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE_NAME) || '' }}
         env:
           SHA: ${{ github.sha }}
