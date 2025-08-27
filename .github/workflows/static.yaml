@@ -35,13 +35,13 @@ permissions:
   id-token: write
   attestations: write
 env:
-  IMAGE_NAME: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.version) || startsWith(github.ref, 'refs/tags/')) && 'dunglas/frankenphp' || 'dunglas/frankenphp-dev' }}
+  IMAGE_NAME: ${{ github.repository_owner }}/frankenphp
   GOTOOLCHAIN: local
 jobs:
   prepare:
     runs-on: oldcpu
     outputs:
-      push: ${{ toJson((steps.check.outputs.ref || (github.event_name == 'workflow_dispatch' && inputs.version) || startsWith(github.ref, 'refs/tags/') || (github.ref == 'refs/heads/main' && github.event_name != 'pull_request')) && true || false) }}
+      push: false
       platforms: ${{ steps.matrix.outputs.platforms }}
       metadata: ${{ steps.matrix.outputs.metadata }}
       gnu_metadata: ${{ steps.matrix.outputs.gnu_metadata }}
@@ -117,7 +117,7 @@ jobs:
             *.platform=${{ matrix.platform }}
             *.cache-from=type=local,src=/tmp/.buildx-cache
             *.cache-to=type=local,dest=/tmp/.buildx-cache,mode=max
-            ${{ fromJson(needs.prepare.outputs.push) && format('*.output=type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE_NAME) || '' }}
+
         env:
           SHA: ${{ github.sha }}
           VERSION: ${{ (github.ref_type == 'tag' && github.ref_name) || needs.prepare.outputs.ref || 'dev' }}
@@ -219,7 +219,7 @@ jobs:
             *.platform=${{ matrix.platform }}
             *.cache-from=type=local,src=/tmp/.buildx-cache-gnu
             *.cache-to=type=local,dest=/tmp/.buildx-cache-gnu,mode=max
-            ${{ fromJson(needs.prepare.outputs.push) && format('*.output=type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE_NAME) || '' }}
+
         env:
           SHA: ${{ github.sha }}
           VERSION: ${{ (github.ref_type == 'tag' && github.ref_name) || needs.prepare.outputs.ref || 'dev' }}
