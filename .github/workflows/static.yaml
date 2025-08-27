@@ -77,106 +77,7 @@ jobs:
         env:
           SHA: ${{ github.sha }}
           VERSION: ${{ steps.check.outputs.ref || 'dev' }}
-  build-linux-musl:
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [linux/amd64]
-    name: Build ${{ matrix.platform }} static musl binary
-    runs-on: oldcpu
-    needs: [prepare]
-    steps:
-      - name: Prepare
-        id: prepare
-        run: |
-          platform=${{ matrix.platform }}
-          echo "sanitized_platform=${platform//\//-}" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.ref }}
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          platforms: ${{ matrix.platform }}
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        with:
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-      - name: Build
-        id: build
-        uses: docker/bake-action@v6
-        with:
-          pull: true
-          load: ${{ !fromJson(needs.prepare.outputs.push) }}
-          targets: static-builder-musl
-          set: |
-            ${{ github.event_name == 'pull_request' && 'static-builder-musl.args.NO_COMPRESS=1' || '' }}
-            *.tags=
-            *.platform=${{ matrix.platform }}
-            *.cache-from=type=local,src=/tmp/.buildx-cache
-            *.cache-to=type=local,dest=/tmp/.buildx-cache,mode=max
 
-        env:
-          SHA: ${{ github.sha }}
-          VERSION: ${{ (github.ref_type == 'tag' && github.ref_name) || needs.prepare.outputs.ref || 'dev' }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - # Workaround for https://github.com/actions/runner/pull/2477#issuecomment-1501003600
-        name: Export metadata
-        if: fromJson(needs.prepare.outputs.push)
-        run: |
-          mkdir -p /tmp/metadata
-
-          # shellcheck disable=SC2086
-          digest=$(jq -r '."static-builder-musl"."containerimage.digest"' <<< ${METADATA})
-          touch "/tmp/metadata/${digest#sha256:}"
-        env:
-          METADATA: ${{ steps.build.outputs.metadata }}
-      - name: Upload metadata
-        if: fromJson(needs.prepare.outputs.push)
-        uses: actions/upload-artifact@v4
-        with:
-          name: metadata-static-builder-musl-${{ steps.prepare.outputs.sanitized_platform }}
-          path: /tmp/metadata/*
-          if-no-files-found: error
-          retention-days: 1
-      - name: Copy binary
-        run: |
-          # shellcheck disable=SC2034
-          digest=$(jq -r '."static-builder-musl"."${{ fromJson(needs.prepare.outputs.push) && 'containerimage.digest' || 'containerimage.config.digest' }}"' <<< "${METADATA}")
-          docker create --platform=${{ matrix.platform }} --name static-builder-musl "${{ fromJson(needs.prepare.outputs.push) && '${IMAGE_NAME}@${digest}' || '${digest}' }}"
-          docker cp "static-builder-musl:/go/src/app/dist/${BINARY}" "${BINARY}"
-        env:
-          METADATA: ${{ steps.build.outputs.metadata }}
-          BINARY: frankenphp-linux-x86_64
-      - name: Upload artifact
-        if: ${{ !fromJson(needs.prepare.outputs.push) }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: frankenphp-linux-x86_64
-          path: frankenphp-linux-x86_64
-      - name: Upload assets
-        if: fromJson(needs.prepare.outputs.push) && (needs.prepare.outputs.ref || github.ref_type == 'tag')
-        run: gh release upload "${{ (github.ref_type == 'tag' && github.ref_name) || needs.prepare.outputs.ref }}" frankenphp-linux-x86_64 --repo dunglas/frankenphp --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - if: fromJson(needs.prepare.outputs.push) && (needs.prepare.outputs.ref || github.ref_type == 'tag')
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: ${{ github.workspace }}/frankenphp-linux-x86_64
-      - name: Run sanity checks
-        run: |
-          "${BINARY}" version
-          "${BINARY}" build-info
-          "${BINARY}" list-modules | grep frankenphp
-          "${BINARY}" list-modules | grep http.encoders.br
-          "${BINARY}" list-modules | grep http.handlers.mercure
-          "${BINARY}" list-modules | grep http.handlers.mercure
-          "${BINARY}" list-modules | grep http.handlers.vulcain
-          "${BINARY}" php-cli -r "echo 'Sanity check passed';"
-        env:
-          BINARY: ./frankenphp-linux-x86_64
 
   build-linux-gnu:
     strategy:
@@ -290,16 +191,10 @@ jobs:
     runs-on: oldcpu
     needs:
       - prepare
-      - build-linux-musl
       - build-linux-gnu
     if: fromJson(needs.prepare.outputs.push)
     steps:
-      - name: Download metadata
-        uses: actions/download-artifact@v4
-        with:
-          pattern: metadata-static-builder-musl-*
-          path: /tmp/metadata
-          merge-multiple: true
+
       - name: Download GNU metadata
         uses: actions/download-artifact@v4
         with:
@@ -314,14 +209,7 @@ jobs:
         with:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
-      - name: Create manifest list and push
-        working-directory: /tmp/metadata
-        run: |
-          # shellcheck disable=SC2046,SC2086
-          docker buildx imagetools create $(jq -cr '.target."static-builder-musl".tags | map("-t " + .) | join(" ")' <<< "${METADATA}") \
-            $(printf "${IMAGE_NAME}@sha256:%s " *)
-        env:
-          METADATA: ${{ needs.prepare.outputs.metadata }}
+
       - name: Create GNU manifest list and push
         working-directory: /tmp/metadata-gnu
         run: |
@@ -330,12 +218,7 @@ jobs:
             $(printf "${IMAGE_NAME}@sha256:%s " *)
         env:
           GNU_METADATA: ${{ needs.prepare.outputs.gnu_metadata }}
-      - name: Inspect image
-        run: |
-          # shellcheck disable=SC2046,SC2086
-          docker buildx imagetools inspect "$(jq -cr '.target."static-builder-musl".tags | first' <<< "${METADATA}")"
-        env:
-          METADATA: ${{ needs.prepare.outputs.metadata }}
+
       - name: Inspect GNU image
         run: |
           # shellcheck disable=SC2046,SC2086
