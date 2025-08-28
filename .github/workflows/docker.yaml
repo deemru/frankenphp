@@ -28,8 +28,7 @@ on:
         description: "FrankenPHP version"
         required: false
         type: string
-  schedule:
-    - cron: "0 4 * * *"
+
 permissions:
   contents: read
 env:
